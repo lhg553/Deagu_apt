@@ -1,0 +1,33 @@
+# Claude Code 설정 (로컬 전용)
+.claude/
+
+# API 키
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+
+# 수집 결과 (대용량 xlsx, 날짜별 폴더)
+daegu_apt/대구부동산_수집결과_*/
+daegu_apt/*.xlsx
+daegu_apt/교차검증로그/
+
+# 로그 파일
+*.log
+daegu_apt/build_cortars_log.txt
+daegu_apt/collect_log.txt
+
+# 자동 생성 파일
+daegu_apt/location_cache.json
+daegu_apt/complex_molit_map_review.xlsx
+daegu_apt/complex_molit_unmatched_analysis.xlsx
+
+# SGIS 원본 Shapefile (용량 큼, 공공데이터 재다운로드 가능)
+daegu_apt/bnd_sigungu_22_2025_2Q/
+
+# 빌드 결과물
+daegu_apt/release/
+daegu_apt/build/
+daegu_apt/dist/
+daegu_apt/dist2/
