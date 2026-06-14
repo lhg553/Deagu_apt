@@ -21,8 +21,10 @@ except ImportError:
 _log = logging.getLogger(__name__)
 
 # 카카오 조회 결과 캐시 (지하철·학교·마트 위치는 사실상 불변 → 재수집 시 재사용)
+import sys as _sys
 _CACHE_FILE = os.path.join(
-    getattr(__import__('sys'), '_MEIPASS', os.path.dirname(os.path.abspath(__file__))),
+    os.path.dirname(_sys.executable) if getattr(_sys, 'frozen', False)
+    else os.path.dirname(os.path.abspath(__file__)),
     'location_cache.json'
 )
 _KAKAO_WORKERS = 5  # 병렬 호출 스레드 수
