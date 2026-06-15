@@ -173,7 +173,7 @@ class MolitScraper:
                     print(f'  [건너뜀] {e}')
                     return pd.DataFrame()
                 except Exception as e:
-                    _log.warning('MOLIT 분양권 요청 실패 (%s %s): %s', lawd_cd, deal_ymd, e)
+                    _log.warning('MOLIT 분양권 요청 실패 (%s %s): %s', lawd_cd, ymd, e)
         return pd.DataFrame(rows)
 
     def collect(self, district: str = 'all', months: int = 3,

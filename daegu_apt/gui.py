@@ -74,6 +74,7 @@ class App(tk.Tk):
         self._q: queue.Queue = queue.Queue()
         self._worker: threading.Thread | None = None
         self._last_output = ''
+        self._stop_event = threading.Event()
 
         # tkinter 변수
         # 구별 체크박스 (다중 선택). 기본값: 수성구만 선택
@@ -270,6 +271,9 @@ class App(tk.Tk):
         self._start_btn = ttk.Button(bf, text='▶  수집 시작', width=15,
                                      command=self._start)
         self._start_btn.pack(side='left', padx=4)
+        self._stop_btn = ttk.Button(bf, text='■  중지', width=9,
+                                    command=self._stop, state='disabled')
+        self._stop_btn.pack(side='left', padx=4)
         self._open_btn = ttk.Button(bf, text='파일 열기', width=11,
                                     command=self._open_result, state='disabled')
         self._open_btn.pack(side='left', padx=4)
@@ -347,6 +351,11 @@ class App(tk.Tk):
         )
         messagebox.showinfo('사용법', msg)
 
+    def _stop(self):
+        self._stop_event.set()
+        self._stop_btn.configure(state='disabled')
+        self._status_var.set('중지 요청 중... (현재 구 완료 후 종료)')
+
     def _clear_log(self):
         self._log_text.configure(state='normal')
         self._log_text.delete('1.0', 'end')
@@ -385,7 +394,9 @@ class App(tk.Tk):
             'test':      self._test_var.get(),
         }
 
+        self._stop_event.clear()
         self._start_btn.configure(state='disabled', text='⏳  수집 중...')
+        self._stop_btn.configure(state='normal')
         self._open_btn.configure(state='disabled')
         self._progress.start(12)
         self._status_var.set('수집 중...')
@@ -420,8 +431,11 @@ class App(tk.Tk):
             multi = len(districts) > 1
             done_files = []
             done_lock = threading.Lock()
+            stop_event = self._stop_event
 
             def _run_one(gu):
+                if stop_event.is_set():
+                    return
                 # 스레드별 로그 접두사 (구 2개 이상 동시 실행 시 구분)
                 _tls.tag = gu if multi else ''
                 _tls.buf = ''
@@ -452,6 +466,9 @@ class App(tk.Tk):
                 list(ex.map(_run_one, districts))
 
             _tls.tag = ''  # 이후 로그는 접두사 없이
+            if stop_event.is_set():
+                self._q.put(('stopped', None))
+                return
             if not done_files:
                 self._q.put(('err', '수집된 파일이 없습니다.\n'))
                 return
@@ -493,6 +510,9 @@ class App(tk.Tk):
                     self._log(content)
                 elif kind == 'done':
                     self._on_done(content)
+                elif kind == 'stopped':
+                    self._log('수집이 중지되었습니다.\n', 'warn')
+                    self._on_stopped()
                 elif kind == 'err':
                     self._log(content, 'err')
                     self._on_stopped()
@@ -526,8 +546,9 @@ class App(tk.Tk):
     def _on_stopped(self):
         self._progress.stop()
         self._start_btn.configure(state='normal', text='▶  수집 시작')
-        if self._status_var.get() == '수집 중...':
-            self._status_var.set('준비')
+        self._stop_btn.configure(state='disabled')
+        if self._status_var.get() in ('수집 중...', '중지 요청 중... (현재 구 완료 후 종료)'):
+            self._status_var.set('중지됨' if self._stop_event.is_set() else '준비')
 
 
 # ── 진입점 ────────────────────────────────────────────────────────
