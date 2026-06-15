@@ -33,6 +33,23 @@ LAWD_NAME = {
 API_URL  = 'https://apis.data.go.kr/1613000/RTMSDataSvcAptTradeDev/getRTMSDataSvcAptTradeDev'
 SILV_URL = 'https://apis.data.go.kr/1613000/RTMSDataSvcSilvTrade/getRTMSDataSvcSilvTrade'
 
+_use_http = False  # HTTPS 실패 후 HTTP 전환 플래그 (세션 내 유지)
+
+
+def _get(url: str, **kw):
+    """HTTPS 실패 시 HTTP로 자동 재시도. 한 번 전환하면 이후 요청도 HTTP 사용."""
+    global _use_http
+    if _use_http:
+        url = url.replace('https://', 'http://', 1)
+    try:
+        return requests.get(url, **kw)
+    except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
+        if not _use_http:
+            _log.warning('HTTPS 실패 → HTTP 재시도: %s', e)
+            _use_http = True
+            return requests.get(url.replace('https://', 'http://', 1), **kw)
+        raise
+
 
 def _prev_months(n: int) -> list[str]:
     result = []
@@ -53,7 +70,7 @@ class MolitScraper:
         url = (f'{API_URL}?serviceKey={self.api_key}'
                f'&LAWD_CD={lawd_cd}&DEAL_YMD={deal_ymd}'
                f'&numOfRows=1000&pageNo={page}')
-        r = requests.get(url, timeout=20)
+        r = _get(url, timeout=20)
         if r.status_code != 200:
             _log.warning('MOLIT HTTP %d (%s %s p%d): %s', r.status_code, lawd_cd, deal_ymd, page, r.text[:200])
             return [], 0
@@ -113,7 +130,7 @@ class MolitScraper:
         url = (f'{SILV_URL}?serviceKey={self.api_key}'
                f'&LAWD_CD={lawd_cd}&DEAL_YMD={deal_ymd}'
                f'&numOfRows=1000&pageNo={page}')
-        r = requests.get(url, timeout=20)
+        r = _get(url, timeout=20)
         if r.status_code in (401, 403) or (r.status_code == 500 and 'Unexpected errors' in r.text):
             raise PermissionError('분양권 API 미승인 — data.go.kr에서 "아파트 분양·입주권 거래 신고 내역" 활용신청 후 승인 대기 중')
         if r.status_code != 200:
