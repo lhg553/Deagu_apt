@@ -3,12 +3,15 @@
 API 키 발급: https://www.data.go.kr → '아파트매매 실거래가 상세 자료' 검색 → 활용신청
 """
 import logging
+import threading
 import requests
 import pandas as pd
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
 
 _log = logging.getLogger(__name__)
+
+stop_event = threading.Event()
 
 DAEGU_LAWD = {
     'all':   ['27110','27140','27170','27200','27230','27260','27290','27710'],
@@ -164,8 +167,12 @@ class MolitScraper:
         deal_ymds = _prev_months(months)
         rows = []
         for lawd_cd in lawd_list:
+            if stop_event.is_set():
+                break
             gu = LAWD_NAME.get(lawd_cd, lawd_cd)
             for ymd in deal_ymds:
+                if stop_event.is_set():
+                    break
                 print(f'  [{gu}] {ymd[:4]}년 {ymd[4:]}월 분양권 조회 중...')
                 try:
                     rows.extend(self._fetch_silv(lawd_cd, ymd))
@@ -184,8 +191,12 @@ class MolitScraper:
         rows = []
 
         for lawd_cd in lawd_list:
+            if stop_event.is_set():
+                break
             gu = LAWD_NAME.get(lawd_cd, lawd_cd)
             for ymd in deal_ymds:
+                if stop_event.is_set():
+                    break
                 print(f'  [{gu}] {ymd[:4]}년 {ymd[4:]}월 실거래 조회 중...')
                 rows.extend(self._fetch(lawd_cd, ymd))
 

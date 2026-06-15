@@ -9,10 +9,13 @@ import re
 import math
 import random
 import time
+import threading
 from urllib.parse import urlsplit, parse_qsl, urlencode, urlunsplit
 
 import pandas as pd
 from playwright.sync_api import sync_playwright
+
+stop_event = threading.Event()
 
 
 def _rebuild_url(template_url: str, path: str = None,
@@ -425,6 +428,9 @@ def _fetch_articles(seen: dict) -> list:
         page.on('response', on_resp)
 
         for i, (cid, cx) in enumerate(targets):
+            if stop_event.is_set():
+                print('  [중지] 수집 중단')
+                break
             current['cid'] = cid
             n0 = len(buf.get(cid, []))
             _visit(page, cid, 'A1')  # 매매 1페이지 캡처 + 세션 워밍 + URL/헤더 캡처

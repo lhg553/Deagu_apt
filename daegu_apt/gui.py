@@ -353,8 +353,18 @@ class App(tk.Tk):
 
     def _stop(self):
         self._stop_event.set()
+        try:
+            import naver_scraper
+            naver_scraper.stop_event.set()
+        except Exception:
+            pass
+        try:
+            import molit_scraper
+            molit_scraper.stop_event.set()
+        except Exception:
+            pass
         self._stop_btn.configure(state='disabled')
-        self._status_var.set('중지 요청 중... (현재 구 완료 후 종료)')
+        self._status_var.set('중지 요청 중...')
 
     def _clear_log(self):
         self._log_text.configure(state='normal')
@@ -395,6 +405,16 @@ class App(tk.Tk):
         }
 
         self._stop_event.clear()
+        try:
+            import naver_scraper
+            naver_scraper.stop_event.clear()
+        except Exception:
+            pass
+        try:
+            import molit_scraper
+            molit_scraper.stop_event.clear()
+        except Exception:
+            pass
         self._start_btn.configure(state='disabled', text='⏳  수집 중...')
         self._stop_btn.configure(state='normal')
         self._open_btn.configure(state='disabled')
@@ -547,7 +567,7 @@ class App(tk.Tk):
         self._progress.stop()
         self._start_btn.configure(state='normal', text='▶  수집 시작')
         self._stop_btn.configure(state='disabled')
-        if self._status_var.get() in ('수집 중...', '중지 요청 중... (현재 구 완료 후 종료)'):
+        if self._status_var.get() in ('수집 중...', '중지 요청 중...'):
             self._status_var.set('중지됨' if self._stop_event.is_set() else '준비')
 
 
