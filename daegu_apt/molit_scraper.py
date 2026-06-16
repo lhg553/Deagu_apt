@@ -2,7 +2,11 @@
 국토교통부 아파트 매매 실거래가 API
 API 키 발급: https://www.data.go.kr → '아파트매매 실거래가 상세 자료' 검색 → 활용신청
 """
+import json
 import logging
+import os
+import sqlite3
+import sys
 import threading
 import requests
 import pandas as pd
@@ -12,6 +16,7 @@ from datetime import datetime, timedelta
 _log = logging.getLogger(__name__)
 
 stop_event = threading.Event()
+_db_lock = threading.Lock()
 
 DAEGU_LAWD = {
     'all':   ['27110','27140','27170','27200','27230','27260','27290','27710'],
@@ -50,6 +55,102 @@ def _get(url: str, **kw):
             return requests.get(url.replace('https://', 'http://', 1), **kw)
         raise
 
+
+# ── SQLite 캐시 ────────────────────────────────────────────────────────────
+
+def _db_path() -> str:
+    if getattr(sys, 'frozen', False):
+        return os.path.join(os.path.dirname(sys.executable), 'molit_cache.db')
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), 'molit_cache.db')
+
+
+def _init_db():
+    try:
+        with _db_lock, sqlite3.connect(_db_path()) as conn:
+            conn.executescript('''
+                CREATE TABLE IF NOT EXISTS cache (
+                    lawd_cd  TEXT NOT NULL,
+                    deal_ymd TEXT NOT NULL,
+                    type     TEXT NOT NULL,
+                    data     TEXT NOT NULL,
+                    saved_at TEXT NOT NULL,
+                    PRIMARY KEY (lawd_cd, deal_ymd, type)
+                );
+                CREATE TABLE IF NOT EXISTS meta (
+                    key   TEXT PRIMARY KEY,
+                    value TEXT NOT NULL
+                );
+            ''')
+    except Exception as e:
+        _log.warning('캐시 DB 초기화 실패 (캐시 비활성화): %s', e)
+
+_init_db()
+
+
+def _cache_get(lawd_cd: str, deal_ymd: str, type_: str) -> list | None:
+    try:
+        with _db_lock, sqlite3.connect(_db_path()) as conn:
+            row = conn.execute(
+                'SELECT data FROM cache WHERE lawd_cd=? AND deal_ymd=? AND type=?',
+                (lawd_cd, deal_ymd, type_)
+            ).fetchone()
+        return json.loads(row[0]) if row else None
+    except Exception:
+        return None
+
+
+def _cache_set(lawd_cd: str, deal_ymd: str, type_: str, rows: list):
+    try:
+        with _db_lock, sqlite3.connect(_db_path()) as conn:
+            conn.execute(
+                'INSERT OR REPLACE INTO cache VALUES (?,?,?,?,?)',
+                (lawd_cd, deal_ymd, type_,
+                 json.dumps(rows, ensure_ascii=False),
+                 datetime.now().isoformat())
+            )
+    except Exception as e:
+        _log.warning('캐시 저장 실패 (%s %s %s): %s', lawd_cd, deal_ymd, type_, e)
+
+
+def _get_meta(key: str) -> str | None:
+    try:
+        with _db_lock, sqlite3.connect(_db_path()) as conn:
+            row = conn.execute('SELECT value FROM meta WHERE key=?', (key,)).fetchone()
+        return row[0] if row else None
+    except Exception:
+        return None
+
+
+def _set_meta(key: str, value: str):
+    try:
+        with _db_lock, sqlite3.connect(_db_path()) as conn:
+            conn.execute('INSERT OR REPLACE INTO meta VALUES (?,?)', (key, value))
+    except Exception as e:
+        _log.warning('메타 저장 실패 (%s): %s', key, e)
+
+
+def need_full_scan() -> bool:
+    """마지막 전수조사로부터 24시간 이상 경과 여부."""
+    last = _get_meta('last_full_scan_at')
+    if not last:
+        return True
+    return (datetime.now() - datetime.fromisoformat(last)).total_seconds() >= 86400
+
+
+def mark_full_scan():
+    """전수조사 완료 시간 기록."""
+    _set_meta('last_full_scan_at', datetime.now().isoformat())
+
+
+def _is_recent_ymd(deal_ymd: str) -> bool:
+    """현재 월 또는 전달이면 True — 30일 지연 신고 규정으로 항상 재조회 대상."""
+    d = datetime.today().replace(day=1)
+    curr = d.strftime('%Y%m')
+    prev = (d - timedelta(days=1)).replace(day=1).strftime('%Y%m')
+    return deal_ymd in (curr, prev)
+
+
+# ───────────────────────────────────────────────────────────────────────────
 
 def _prev_months(n: int) -> list[str]:
     result = []
@@ -176,8 +277,9 @@ class MolitScraper:
         return rows
 
     def collect_silv(self, district: str = 'all', months: int = 3,
-                     lawd_codes: list = None) -> pd.DataFrame:
+                     lawd_codes: list = None, full_scan: bool = True) -> pd.DataFrame:
         """분양권·입주권 실거래 수집.
+        full_scan=False 이면 최근 2개월 외 캐시 사용.
         API 미승인 시 빈 DataFrame 반환 (경고 출력).
         """
         lawd_list = lawd_codes if lawd_codes else DAEGU_LAWD.get(district, DAEGU_LAWD['all'])
@@ -190,9 +292,18 @@ class MolitScraper:
             for ymd in deal_ymds:
                 if stop_event.is_set():
                     break
+                if not full_scan and not _is_recent_ymd(ymd):
+                    cached = _cache_get(lawd_cd, ymd, 'silv')
+                    if cached is not None:
+                        print(f'  [{gu}] {ymd[:4]}년 {ymd[4:]}월 분양권 (캐시)')
+                        rows.extend(cached)
+                        continue
                 print(f'  [{gu}] {ymd[:4]}년 {ymd[4:]}월 분양권 조회 중...')
                 try:
-                    rows.extend(self._fetch_silv(lawd_cd, ymd))
+                    fetched = self._fetch_silv(lawd_cd, ymd)
+                    rows.extend(fetched)
+                    if not _is_recent_ymd(ymd):
+                        _cache_set(lawd_cd, ymd, 'silv', fetched)
                 except PermissionError as e:
                     print(f'  [건너뜀] {e}')
                     return pd.DataFrame()
@@ -201,8 +312,10 @@ class MolitScraper:
         return pd.DataFrame(rows)
 
     def collect(self, district: str = 'all', months: int = 3,
-                lawd_codes: list = None) -> pd.DataFrame:
-        """lawd_codes 지정 시 해당 코드만 조회 (Naver 결과 기반 동적 구성)."""
+                lawd_codes: list = None, full_scan: bool = True) -> pd.DataFrame:
+        """lawd_codes 지정 시 해당 코드만 조회 (Naver 결과 기반 동적 구성).
+        full_scan=False 이면 최근 2개월 외 캐시 사용.
+        """
         lawd_list = lawd_codes if lawd_codes else DAEGU_LAWD.get(district, DAEGU_LAWD['all'])
         deal_ymds = _prev_months(months)
         rows = []
@@ -214,7 +327,16 @@ class MolitScraper:
             for ymd in deal_ymds:
                 if stop_event.is_set():
                     break
+                if not full_scan and not _is_recent_ymd(ymd):
+                    cached = _cache_get(lawd_cd, ymd, 'apt')
+                    if cached is not None:
+                        print(f'  [{gu}] {ymd[:4]}년 {ymd[4:]}월 실거래 (캐시)')
+                        rows.extend(cached)
+                        continue
                 print(f'  [{gu}] {ymd[:4]}년 {ymd[4:]}월 실거래 조회 중...')
-                rows.extend(self._fetch(lawd_cd, ymd))
+                fetched = self._fetch(lawd_cd, ymd)
+                rows.extend(fetched)
+                if not _is_recent_ymd(ymd):
+                    _cache_set(lawd_cd, ymd, 'apt', fetched)
 
         return pd.DataFrame(rows)

@@ -391,6 +391,7 @@ def run(args):
         else:
             molit_months = 1 if args.test else args.months
 
+            import molit_scraper as _molit_mod
             from molit_scraper import MolitScraper, LAWD_NAME
             _name_to_lawd = {v: k for k, v in LAWD_NAME.items()}
             if args.district != 'all':
@@ -409,11 +410,14 @@ def run(args):
                     _label = region_tag
 
             scraper = MolitScraper(args.molit_key)
-            suffix = ' (TEST: 1개월)' if args.test else ''
+            full_scan = _molit_mod.need_full_scan()
+            mode_label = '전수조사' if full_scan else '최근 2개월 갱신 + 캐시'
+            suffix = ' (TEST: 1개월)' if args.test else f' ({mode_label})'
 
             print(f'\n=== [국토교통부] {_label} 실거래가 수집{suffix} ===')
             molit_df = scraper.collect(
-                district=args.district, months=molit_months, lawd_codes=lawd_codes
+                district=args.district, months=molit_months,
+                lawd_codes=lawd_codes, full_scan=full_scan
             )
             if not molit_df.empty:
                 molit_df.insert(0, '지역', '대구')
@@ -426,7 +430,8 @@ def run(args):
 
             print(f'\n=== [국토교통부] {_label} 분양권·입주권 수집{suffix} ===')
             silv_df = scraper.collect_silv(
-                district=args.district, months=molit_months, lawd_codes=lawd_codes
+                district=args.district, months=molit_months,
+                lawd_codes=lawd_codes, full_scan=full_scan
             )
             if not silv_df.empty:
                 silv_df.insert(0, '지역', '대구')
@@ -438,6 +443,9 @@ def run(args):
                                         ['거래금액', '전용면적'], [])
             else:
                 silv_df = pd.DataFrame()
+
+            if full_scan and not _molit_mod.stop_event.is_set():
+                _molit_mod.mark_full_scan()
 
             # 회전률 계산 → 호가_단지요약 시트 갱신
             if '호가_단지요약' in sheets and not molit_df.empty:
