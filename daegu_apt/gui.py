@@ -11,6 +11,7 @@ import threading
 from datetime import datetime
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, scrolledtext
+import molit_scraper as _molit_scraper  # _init_db() 를 EXE 시작 시 즉시 실행
 
 # ── 경로 설정 ─────────────────────────────────────────────────────
 # PyInstaller EXE: sys.executable 디렉터리
@@ -359,8 +360,7 @@ class App(tk.Tk):
         except Exception:
             pass
         try:
-            import molit_scraper
-            molit_scraper.stop_event.set()
+            _molit_scraper.stop_event.set()
         except Exception:
             pass
         self._stop_btn.configure(state='disabled')
@@ -411,8 +411,7 @@ class App(tk.Tk):
         except Exception:
             pass
         try:
-            import molit_scraper
-            molit_scraper.stop_event.clear()
+            _molit_scraper.stop_event.clear()
         except Exception:
             pass
         self._start_btn.configure(state='disabled', text='⏳  수집 중...')
