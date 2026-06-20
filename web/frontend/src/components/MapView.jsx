@@ -1,15 +1,14 @@
-import { useEffect, useRef } from 'react'
+import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react'
 import L from 'leaflet'
 import 'leaflet.markercluster'
 
-// 매매 최저가 기준 색상
 function priceColor(price) {
-  if (!price) return '#9ca3af'        // 회색 (매물없음)
-  if (price <= 15000) return '#22c55e' // 초록 (1.5억 이하)
-  if (price <= 30000) return '#84cc16' // 연두 (3억 이하)
-  if (price <= 50000) return '#f59e0b' // 노랑 (5억 이하)
-  if (price <= 80000) return '#f97316' // 주황 (8억 이하)
-  return '#ef4444'                     // 빨강 (8억 초과)
+  if (!price) return '#9ca3af'
+  if (price <= 15000) return '#22c55e'
+  if (price <= 30000) return '#84cc16'
+  if (price <= 50000) return '#f59e0b'
+  if (price <= 80000) return '#f97316'
+  return '#ef4444'
 }
 
 function formatPrice(won) {
@@ -18,10 +17,30 @@ function formatPrice(won) {
   return `${won.toLocaleString()}만`
 }
 
-export default function MapView({ apartments, onSelect }) {
+const MapView = forwardRef(function MapView({ apartments }, ref) {
   const containerRef = useRef(null)
   const mapRef = useRef(null)
   const clusterRef = useRef(null)
+  const markersRef = useRef({}) // { 단지코드: circleMarker }
+
+  // 외부에서 호출 가능한 메서드 노출
+  useImperativeHandle(ref, () => ({
+    flyTo(apt) {
+      const lat = apt['위도']
+      const lng = apt['경도']
+      if (!lat || !lng || !mapRef.current) return
+
+      const marker = markersRef.current[apt['단지코드']]
+      if (marker && clusterRef.current) {
+        // 클러스터에 묶여 있어도 펼쳐서 팝업 오픈
+        clusterRef.current.zoomToShowLayer(marker, () => {
+          setTimeout(() => marker.openPopup(), 100)
+        })
+      } else {
+        mapRef.current.flyTo([lat, lng], 16, { duration: 0.8 })
+      }
+    },
+  }))
 
   // 지도 초기화 (1회)
   useEffect(() => {
@@ -32,7 +51,6 @@ export default function MapView({ apartments, onSelect }) {
       12
     )
 
-    // CartoDB Positron — 밝고 깔끔한 회색 배경
     L.tileLayer(
       'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
       {
@@ -43,7 +61,6 @@ export default function MapView({ apartments, onSelect }) {
       }
     ).addTo(mapRef.current)
 
-    // 범례
     const legend = L.control({ position: 'bottomleft' })
     legend.onAdd = () => {
       const div = L.DomUtil.create('div', '')
@@ -70,6 +87,7 @@ export default function MapView({ apartments, onSelect }) {
     if (clusterRef.current) {
       mapRef.current.removeLayer(clusterRef.current)
     }
+    markersRef.current = {}
 
     const cluster = L.markerClusterGroup({
       chunkedLoading: true,
@@ -82,12 +100,9 @@ export default function MapView({ apartments, onSelect }) {
       const lng = apt['경도']
       if (!lat || !lng) return
 
-      const price = apt['매매_최저(만원)']
-      const color = priceColor(price)
-
       const marker = L.circleMarker([lat, lng], {
         radius: 7,
-        fillColor: color,
+        fillColor: priceColor(apt['매매_최저(만원)']),
         color: '#ffffff',
         weight: 1.5,
         opacity: 1,
@@ -96,10 +111,7 @@ export default function MapView({ apartments, onSelect }) {
 
       const low = apt['매매_최저(만원)']
       const high = apt['매매_최고(만원)']
-      const priceStr =
-        low && high
-          ? `${formatPrice(low)} ~ ${formatPrice(high)}`
-          : '매물없음'
+      const priceStr = low && high ? `${formatPrice(low)} ~ ${formatPrice(high)}` : '매물없음'
 
       marker.bindPopup(
         `<div style="min-width:200px;font-size:13px;line-height:1.7">
@@ -115,7 +127,9 @@ export default function MapView({ apartments, onSelect }) {
         { maxWidth: 280 }
       )
 
-      marker.on('click', () => onSelect && onSelect(apt))
+      if (apt['단지코드']) {
+        markersRef.current[apt['단지코드']] = marker
+      }
       cluster.addLayer(marker)
     })
 
@@ -124,4 +138,6 @@ export default function MapView({ apartments, onSelect }) {
   }, [apartments])
 
   return <div ref={containerRef} style={{ height: '100%', width: '100%' }} />
-}
+})
+
+export default MapView

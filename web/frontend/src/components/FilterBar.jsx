@@ -1,4 +1,4 @@
-export default function FilterBar({ districts, filters, onChange, total }) {
+export default function FilterBar({ districts, filters, onChange, total, search, onSearch }) {
   function set(key, value) {
     onChange({ ...filters, [key]: value })
   }
@@ -10,6 +10,35 @@ export default function FilterBar({ districts, filters, onChange, total }) {
         <span className="filter-count">{total.toLocaleString()}개 단지</span>
       </div>
 
+      {/* 단지명 검색 */}
+      <div className="filter-section">
+        <label className="filter-label">단지명 검색</label>
+        <input
+          type="text"
+          placeholder="단지명 입력..."
+          value={search}
+          onChange={(e) => onSearch(e.target.value)}
+          className="filter-input"
+          style={{ width: '100%' }}
+        />
+        {search && (
+          <button
+            onClick={() => onSearch('')}
+            style={{
+              marginTop: 4,
+              fontSize: 11,
+              color: '#6b7280',
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              padding: 0,
+            }}
+          >
+            ✕ 검색 초기화
+          </button>
+        )}
+      </div>
+
       {/* 구 선택 */}
       <div className="filter-section">
         <label className="filter-label">지역 (구)</label>
@@ -19,9 +48,7 @@ export default function FilterBar({ districts, filters, onChange, total }) {
           className="filter-select"
         >
           {districts.map((d) => (
-            <option key={d} value={d}>
-              {d}
-            </option>
+            <option key={d} value={d}>{d}</option>
           ))}
         </select>
       </div>
@@ -48,7 +75,6 @@ export default function FilterBar({ districts, filters, onChange, total }) {
             step={1000}
           />
         </div>
-        {/* 빠른 선택 버튼 */}
         <div style={{ display: 'flex', gap: 4, marginTop: 6, flexWrap: 'wrap' }}>
           {[
             { label: '5억↓', max: 50000 },
@@ -107,9 +133,7 @@ export default function FilterBar({ districts, filters, onChange, total }) {
           ].map(({ label, min, max }) => (
             <button
               key={label}
-              onClick={() =>
-                onChange({ ...filters, minSize: min, maxSize: max })
-              }
+              onClick={() => onChange({ ...filters, minSize: min, maxSize: max })}
               className="quick-btn"
               style={{ background: '#f3f4f6', color: '#374151' }}
             >
@@ -119,9 +143,9 @@ export default function FilterBar({ districts, filters, onChange, total }) {
         </div>
       </div>
 
-      {/* 초기화 */}
+      {/* 전체 초기화 */}
       <button
-        onClick={() =>
+        onClick={() => {
           onChange({
             district: '전체',
             minPrice: '',
@@ -129,7 +153,8 @@ export default function FilterBar({ districts, filters, onChange, total }) {
             minSize: '',
             maxSize: '',
           })
-        }
+          onSearch('')
+        }}
         style={{
           width: '100%',
           padding: '8px',
@@ -142,7 +167,7 @@ export default function FilterBar({ districts, filters, onChange, total }) {
           cursor: 'pointer',
         }}
       >
-        필터 초기화
+        전체 초기화
       </button>
     </div>
   )
